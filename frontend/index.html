@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI News Aggregator</title>
+    
+    <!-- 
+    =====================================================================
+    AI News Aggregator Frontend
+    =====================================================================
+    This is a simple, static HTML page that fetches and displays AI news 
+    from your Supabase database. It can be hosted on GitHub Pages, 
+    Netlify, Vercel, or any static hosting service.
+    
+    To use:
+    1. Replace YOUR_SUPABASE_URL with your actual Supabase project URL
+    2. Replace YOUR_ANON_KEY with your Supabase anon (public) key
+    3. Host this file on your preferred platform
+    
+    The anon key is safe to expose publicly - it only allows read access
+    to data permitted by your Row Level Security policies.
+    =====================================================================
+    -->
+    
+    <style>
+        /* ============================================= */
+        /* CSS Variables for easy theming               */
+        /* ============================================= */
+        :root {
+            --primary-color: #6366f1;
+            --primary-hover: #4f46e5;
+            --bg-color: #0f172a;
+            --surface-color: #1e293b;
+            --surface-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border-color: #334155;
+            --success-color: #22c55e;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+            --gradient-start: #6366f1;
+            --gradient-end: #8b5cf6;
+        }
+
+        /* ============================================= */
+        /* Base styles                                  */
+        /* ============================================= */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        /* ============================================= */
+        /* Header                                       */
+        /* ============================================= */
+        header {
+            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+            padding: 2rem;
+            text-align: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        header p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 1rem;
+        }
+
+        /* ============================================= */
+        /* Navigation / Filters                         */
+        /* ============================================= */
+        .filters {
+            background: var(--surface-color);
+            padding: 1rem 2rem;
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .filter-btn {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.875rem;
+        }
+
+        .filter-btn:hover {
+            background: var(--surface-hover);
+            color: var(--text-primary);
+        }
+
+        .filter-btn.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        /* ============================================= */
+        /* Main content area                            */
+        /* ============================================= */
+        main {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        /* ============================================= */
+        /* Loading state                                */
+        /* ============================================= */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 4rem;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* ============================================= */
+        /* Error state                                  */
+        /* ============================================= */
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--error-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+            color: var(--error-color);
+        }
+
+        /* ============================================= */
+        /* Article grid                                 */
+        /* ============================================= */
+        .articles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 1.5rem;
+        }
+
+        /* ============================================= */
+        /* Article card                                 */
+        /* ============================================= */
+        .article-card {
+            background: var(--surface-color);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border-color);
+        }
+
+        .article-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .article-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: var(--surface-hover);
+        }
+
+        .article-image.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            color: var(--text-muted);
+        }
+
+        .article-content {
+            padding: 1.25rem;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .article-meta {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .category-tag {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary-color);
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .article-date {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .article-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            line-height: 1.4;
+            color: var(--text-primary);
+        }
+
+        .article-title a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        .article-title a:hover {
+            color: var(--primary-color);
+        }
+
+        .article-description {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            flex: 1;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .article-source {
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }
+
+        /* ============================================= */
+        /* Load more button                             */
+        /* ============================================= */
+        .load-more {
+            display: block;
+            width: 100%;
+            max-width: 300px;
+            margin: 2rem auto;
+            padding: 1rem 2rem;
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .load-more:hover {
+            background: var(--primary-hover);
+        }
+
+        .load-more:disabled {
+            background: var(--surface-hover);
+            cursor: not-allowed;
+        }
+
+        /* ============================================= */
+        /* Footer                                       */
+        /* ============================================= */
+        footer {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            border-top: 1px solid var(--border-color);
+        }
+
+        footer a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+
+        /* ============================================= */
+        /* Responsive adjustments                       */
+        /* ============================================= */
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 1.5rem;
+            }
+            
+            .articles-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            main {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <h1>🤖 AI News Aggregator</h1>
+        <p>The latest in artificial intelligence, updated every 6 hours</p>
+    </header>
+
+    <!-- Category filters -->
+    <nav class="filters" id="filters">
+        <button class="filter-btn active" data-category="all">All</button>
+        <button class="filter-btn" data-category="machine-learning">Machine Learning</button>
+        <button class="filter-btn" data-category="generative-ai">Generative AI</button>
+        <button class="filter-btn" data-category="research">Research</button>
+        <button class="filter-btn" data-category="industry">Industry</button>
+        <button class="filter-btn" data-category="robotics">Robotics</button>
+        <button class="filter-btn" data-category="ethics">Ethics</button>
+    </nav>
+
+    <!-- Main content -->
+    <main id="main">
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+        </div>
+        <div class="articles-grid" id="articles"></div>
+        <button class="load-more" id="loadMore" style="display: none;">Load More</button>
+    </main>
+
+    <!-- Footer -->
+    <footer>
+        <p>
+            Powered by <a href="https://supabase.com" target="_blank">Supabase</a> & 
+            <a href="https://github.com/features/actions" target="_blank">GitHub Actions</a>
+        </p>
+        <p style="margin-top: 0.5rem;">
+            Data auto-refreshes every 6 hours • Old articles purged after 30 days
+        </p>
+    </footer>
+
+    <!-- ============================================= -->
+    <!-- JavaScript                                   -->
+    <!-- ============================================= -->
+    <script>
+        // =================================================================
+        // CONFIGURATION - REPLACE THESE WITH YOUR ACTUAL VALUES
+        // =================================================================
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL';  // e.g., 'https://xxxxx.supabase.co'
+        const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY'; // Your public anon key
+        
+        // API endpoint for articles
+        const API_URL = `${SUPABASE_URL}/rest/v1/articles`;
+        
+        // =================================================================
+        // STATE
+        // =================================================================
+        let currentCategory = 'all';
+        let currentPage = 0;
+        const PAGE_SIZE = 12;
+        let hasMore = true;
+        
+        // =================================================================
+        // DOM ELEMENTS
+        // =================================================================
+        const articlesContainer = document.getElementById('articles');
+        const loadingEl = document.getElementById('loading');
+        const loadMoreBtn = document.getElementById('loadMore');
+        const filtersEl = document.getElementById('filters');
+        
+        // =================================================================
+        // HELPER FUNCTIONS
+        // =================================================================
+        
+        // Format date for display
+        function formatDate(dateString) {
+            if (!dateString) return 'Unknown date';
+            const date = new Date(dateString);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+            const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+            
+            if (diffHours < 1) return 'Just now';
+            if (diffHours < 24) return `${diffHours}h ago`;
+            if (diffDays < 7) return `${diffDays}d ago`;
+            
+            return date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+            });
+        }
+        
+        // Truncate text to a maximum length
+        function truncate(text, maxLength) {
+            if (!text || text.length <= maxLength) return text;
+            return text.slice(0, maxLength).trim() + '...';
+        }
+        
+        // Get category display name
+        function getCategoryName(category) {
+            const names = {
+                'machine-learning': 'Machine Learning',
+                'generative-ai': 'Generative AI',
+                'nlp': 'NLP',
+                'computer-vision': 'Computer Vision',
+                'robotics': 'Robotics',
+                'ethics': 'Ethics',
+                'research': 'Research',
+                'industry': 'Industry',
+                'hardware': 'Hardware',
+                'general': 'General'
+            };
+            return names[category] || category;
+        }
+        
+        // Create article card HTML
+        function createArticleCard(article) {
+            const imageHtml = article.image_url 
+                ? `<img class="article-image" src="${article.image_url}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'article-image placeholder\\'>📰</div>'">`
+                : '<div class="article-image placeholder">📰</div>';
+            
+            return `
+                <article class="article-card">
+                    ${imageHtml}
+                    <div class="article-content">
+                        <div class="article-meta">
+                            <span class="category-tag">${getCategoryName(article.category)}</span>
+                            <span class="article-date">${formatDate(article.published_at)}</span>
+                        </div>
+                        <h2 class="article-title">
+                            <a href="${article.url}" target="_blank" rel="noopener noreferrer">
+                                ${truncate(article.title, 100)}
+                            </a>
+                        </h2>
+                        <p class="article-description">
+                            ${truncate(article.description || '', 150)}
+                        </p>
+                        ${article.author ? `<p class="article-source">By ${article.author}</p>` : ''}
+                    </div>
+                </article>
+            `;
+        }
+        
+        // =================================================================
+        // API FUNCTIONS
+        // =================================================================
+        
+        async function fetchArticles(category = 'all', page = 0) {
+            // Build query URL
+            let url = `${API_URL}?select=*&is_deleted=eq.false&order=published_at.desc.nullsfirst`;
+            
+            // Add category filter if not "all"
+            if (category !== 'all') {
+                url += `&category=eq.${category}`;
+            }
+            
+            // Add pagination
+            const offset = page * PAGE_SIZE;
+            url += `&limit=${PAGE_SIZE}&offset=${offset}`;
+            
+            // Make request
+            const response = await fetch(url, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            
+            return response.json();
+        }
+        
+        // =================================================================
+        // UI FUNCTIONS
+        // =================================================================
+        
+        function showLoading() {
+            loadingEl.style.display = 'flex';
+            loadMoreBtn.style.display = 'none';
+        }
+        
+        function hideLoading() {
+            loadingEl.style.display = 'none';
+        }
+        
+        function showError(message) {
+            articlesContainer.innerHTML = `
+                <div class="error" style="grid-column: 1 / -1;">
+                    <p>😕 ${message}</p>
+                    <p style="margin-top: 0.5rem; font-size: 0.875rem;">
+                        Make sure to configure your Supabase URL and anon key in the script.
+                    </p>
+                </div>
+            `;
+        }
+        
+        async function loadArticles(append = false) {
+            if (!append) {
+                showLoading();
+                articlesContainer.innerHTML = '';
+                currentPage = 0;
+            }
+            
+            loadMoreBtn.disabled = true;
+            loadMoreBtn.textContent = 'Loading...';
+            
+            try {
+                const articles = await fetchArticles(currentCategory, currentPage);
+                
+                hideLoading();
+                
+                if (articles.length === 0 && currentPage === 0) {
+                    articlesContainer.innerHTML = `
+                        <div class="error" style="grid-column: 1 / -1;">
+                            <p>No articles found${currentCategory !== 'all' ? ` in ${getCategoryName(currentCategory)}` : ''}.</p>
+                        </div>
+                    `;
+                    loadMoreBtn.style.display = 'none';
+                    return;
+                }
+                
+                // Render articles
+                const html = articles.map(createArticleCard).join('');
+                if (append) {
+                    articlesContainer.innerHTML += html;
+                } else {
+                    articlesContainer.innerHTML = html;
+                }
+                
+                // Update load more button
+                hasMore = articles.length === PAGE_SIZE;
+                loadMoreBtn.style.display = hasMore ? 'block' : 'none';
+                loadMoreBtn.disabled = false;
+                loadMoreBtn.textContent = 'Load More';
+                
+            } catch (error) {
+                console.error('Error fetching articles:', error);
+                hideLoading();
+                showError('Failed to load articles. Please try again later.');
+            }
+        }
+        
+        // =================================================================
+        // EVENT HANDLERS
+        // =================================================================
+        
+        // Filter button clicks
+        filtersEl.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('filter-btn')) return;
+            
+            // Update active state
+            filtersEl.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            e.target.classList.add('active');
+            
+            // Update category and reload
+            currentCategory = e.target.dataset.category;
+            loadArticles();
+        });
+        
+        // Load more button
+        loadMoreBtn.addEventListener('click', () => {
+            currentPage++;
+            loadArticles(true);
+        });
+        
+        // =================================================================
+        // INITIALIZE
+        // =================================================================
+        
+        // Check if configuration is set
+        if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_ANON_KEY') {
+            hideLoading();
+            showError('Please configure your Supabase URL and anon key in the script.');
+        } else {
+            loadArticles();
+        }
+    </script>
+</body>
+</html>

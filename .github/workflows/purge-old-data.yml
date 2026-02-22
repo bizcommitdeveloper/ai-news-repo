@@ -1,0 +1,129 @@
+# ============================================================================
+# Purge Old Data Workflow
+# ============================================================================
+# This workflow runs daily at midnight UTC to remove old articles and logs,
+# keeping the database within Supabase's free tier storage limit (500 MB).
+#
+# Schedule: Daily at 00:00 UTC
+# Also triggers on: Manual dispatch (for emergency cleanup)
+#
+# The purge script removes:
+# - Articles older than 30 days (configurable)
+# - Articles exceeding the 1000 count limit (configurable)
+# - Fetch logs older than 7 days
+# - Storage metrics older than 30 days
+# ============================================================================
+
+name: Purge Old Data
+
+on:
+  # Run daily at midnight UTC
+  schedule:
+    - cron: '0 0 * * *'  # Every day at 00:00 UTC
+  
+  # Allow manual triggering for emergency cleanup
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (log what would be deleted without actually deleting)'
+        required: false
+        default: 'false'
+        type: boolean
+      verbose:
+        description: 'Enable verbose logging'
+        required: false
+        default: 'false'
+        type: boolean
+
+# Prevent multiple purge jobs from running simultaneously
+concurrency:
+  group: purge-data
+  cancel-in-progress: false
+
+jobs:
+  purge:
+    name: Purge Old Data
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ========================================
+      # SETUP
+      # ========================================
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'scripts/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      # ========================================
+      # PRE-PURGE CHECK
+      # ========================================
+      
+      - name: Check current storage before purge
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LOG_LEVEL: INFO
+        working-directory: scripts
+        run: |
+          echo "📊 Storage status BEFORE purge:"
+          python monitor_storage.py || true
+
+      # ========================================
+      # PURGE DATA
+      # ========================================
+      
+      - name: Purge old data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LOG_LEVEL: ${{ inputs.verbose == 'true' && 'DEBUG' || 'INFO' }}
+          # Dry run mode (TODO: implement in script if needed)
+          DRY_RUN: ${{ inputs.dry_run }}
+        working-directory: scripts
+        run: python purge_data.py
+
+      # ========================================
+      # POST-PURGE CHECK
+      # ========================================
+      
+      - name: Check storage after purge
+        if: success()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LOG_LEVEL: INFO
+        working-directory: scripts
+        run: |
+          echo ""
+          echo "📊 Storage status AFTER purge:"
+          python monitor_storage.py || true
+
+      # ========================================
+      # JOB SUMMARY
+      # ========================================
+      
+      - name: Create job summary
+        if: always()
+        run: |
+          echo "## 🗑️ Data Purge Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Purge completed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Purge failed - check logs for details" >> $GITHUB_STEP_SUMMARY
+          fi

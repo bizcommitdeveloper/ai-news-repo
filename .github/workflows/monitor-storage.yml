@@ -1,0 +1,167 @@
+# ============================================================================
+# Storage Monitor Workflow
+# ============================================================================
+# This workflow runs weekly to check storage usage and alert if approaching
+# Supabase's free tier limit (500 MB).
+#
+# Schedule: Every Sunday at 00:00 UTC
+# Also triggers on: Manual dispatch (for on-demand checks)
+#
+# The monitor outputs:
+# - status: OK, WARNING, or CRITICAL
+# - usage_percent: Percentage of storage limit used
+# - article_count: Current number of articles
+#
+# These outputs can be used to trigger notifications (Slack, email, etc.)
+# ============================================================================
+
+name: Monitor Storage
+
+on:
+  # Run weekly on Sundays
+  schedule:
+    - cron: '0 0 * * 0'  # Every Sunday at 00:00 UTC
+  
+  # Allow manual checks
+  workflow_dispatch:
+
+jobs:
+  monitor:
+    name: Check Storage Usage
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    # Output variables for use in downstream jobs/notifications
+    outputs:
+      status: ${{ steps.monitor.outputs.status }}
+      usage_percent: ${{ steps.monitor.outputs.usage_percent }}
+      article_count: ${{ steps.monitor.outputs.article_count }}
+
+    steps:
+      # ========================================
+      # SETUP
+      # ========================================
+      
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'scripts/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      # ========================================
+      # MONITOR STORAGE
+      # ========================================
+      
+      - name: Check storage usage
+        id: monitor
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LOG_LEVEL: INFO
+        working-directory: scripts
+        # Continue on non-zero exit (CRITICAL returns exit code 2)
+        continue-on-error: true
+        run: python monitor_storage.py
+
+      # ========================================
+      # HANDLE ALERTS
+      # ========================================
+      
+      - name: Handle CRITICAL storage
+        if: steps.monitor.outputs.status == 'CRITICAL'
+        run: |
+          echo "::error::CRITICAL: Storage usage is above ${steps.monitor.outputs.usage_percent}%!"
+          echo "Immediate action required to prevent service disruption."
+          # Exit with error to make the workflow fail visibly
+          exit 1
+
+      - name: Handle WARNING storage
+        if: steps.monitor.outputs.status == 'WARNING'
+        run: |
+          echo "::warning::WARNING: Storage usage is at ${steps.monitor.outputs.usage_percent}%"
+          echo "Consider reducing retention settings or purging old data."
+
+      # ========================================
+      # NOTIFICATIONS (Optional - Configure as needed)
+      # ========================================
+      
+      # Slack notification for CRITICAL status
+      # - name: Notify Slack on CRITICAL
+      #   if: steps.monitor.outputs.status == 'CRITICAL'
+      #   uses: 8398a7/action-slack@v3
+      #   with:
+      #     status: custom
+      #     custom_payload: |
+      #       {
+      #         "text": "🚨 AI News Storage CRITICAL",
+      #         "blocks": [
+      #           {
+      #             "type": "section",
+      #             "text": {
+      #               "type": "mrkdwn",
+      #               "text": "*Storage Alert: CRITICAL*\n\nUsage: ${{ steps.monitor.outputs.usage_percent }}%\nArticles: ${{ steps.monitor.outputs.article_count }}\n\nImmediate action required!"
+      #             }
+      #           }
+      #         ]
+      #       }
+      #     webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+
+      # Email notification using SendGrid (example)
+      # - name: Send email alert
+      #   if: steps.monitor.outputs.status == 'CRITICAL'
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: smtp.sendgrid.net
+      #     server_port: 587
+      #     username: apikey
+      #     password: ${{ secrets.SENDGRID_API_KEY }}
+      #     subject: 🚨 AI News Storage CRITICAL - ${{ steps.monitor.outputs.usage_percent }}% Used
+      #     to: your-email@example.com
+      #     from: AI News Bot <noreply@example.com>
+      #     body: |
+      #       Storage is at CRITICAL levels.
+      #       
+      #       Usage: ${{ steps.monitor.outputs.usage_percent }}%
+      #       Articles: ${{ steps.monitor.outputs.article_count }}
+      #       
+      #       Please take action immediately to prevent service disruption.
+
+      # ========================================
+      # JOB SUMMARY
+      # ========================================
+      
+      - name: Create job summary
+        if: always()
+        run: |
+          echo "## 📊 Storage Monitor Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Run time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          STATUS="${{ steps.monitor.outputs.status }}"
+          USAGE="${{ steps.monitor.outputs.usage_percent }}"
+          ARTICLES="${{ steps.monitor.outputs.article_count }}"
+          
+          if [ "$STATUS" == "CRITICAL" ]; then
+            echo "### 🚨 Status: CRITICAL" >> $GITHUB_STEP_SUMMARY
+          elif [ "$STATUS" == "WARNING" ]; then
+            echo "### ⚠️ Status: WARNING" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ✅ Status: OK" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Usage | ${USAGE}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Articles | ${ARTICLES} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Free Tier Limit | 500 MB |" >> $GITHUB_STEP_SUMMARY
