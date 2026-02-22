@@ -9,6 +9,7 @@ This guide walks you through setting up your AI News Aggregator from scratch. By
 ## Prerequisites
 
 Before starting, make sure you have:
+
 - A GitHub account (free)
 - A Supabase account (free tier is sufficient)
 - Basic familiarity with GitHub (forking repos, adding secrets)
@@ -32,6 +33,7 @@ You now have your own copy that you can configure.
 ### 2.1 Create a Supabase Account
 
 If you don't have one already:
+
 1. Go to [supabase.com](https://supabase.com)
 2. Click **Start your project** and sign up with GitHub
 3. Accept the terms and authorize the app
@@ -40,9 +42,9 @@ If you don't have one already:
 
 1. Click **New Project**
 2. Fill in the details:
-   - **Name:** `ai-news-aggregator` (or your preferred name)
-   - **Database Password:** Generate a strong password and **save it somewhere safe**
-   - **Region:** Choose the region closest to you
+  - **Name:** `ai-news-aggregator` (or your preferred name)
+  - **Database Password:** Generate a strong password and **save it somewhere safe**
+  - **Region:** Choose the region closest to you
 3. Click **Create new project**
 4. Wait 2-3 minutes for the project to be provisioned
 
@@ -70,9 +72,13 @@ You'll need two keys for GitHub Actions:
 1. Go to **Settings** (gear icon in left sidebar)
 2. Click **API** under Project Settings
 3. You'll see:
-   - **Project URL** - Copy this (looks like `https://xxxxx.supabase.co`)
-   - **anon (public) key** - This is for your frontend
-   - **service_role key** - Click "Reveal" to see it. **This is secret - never expose it!**
+  - **Project URL** - Copy this (looks like `https://cipcvzifbsupjketxzen.supabase.co`)
+  [https://cipcvzifbsupjketxzen.supabase.co](https://cipcvzifbsupjketxzen.supabase.co)
+  - **anon (public) key** - This is for your frontend
+  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpcGN2emlmYnN1cGprZXR4emVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3OTI5NTMsImV4cCI6MjA4NzM2ODk1M30.KuWYW7_aXBr4yAegSGUK5ogfS0p2fJfqZPVwF-t0eHg
+  - **service_role key** - Click "Reveal" to see it. **This is secret - never expose it!**
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpcGN2emlmYnN1cGprZXR4emVuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MTc5Mjk1MywiZXhwIjoyMDg3MzY4OTUzfQ.YbfKGGO1S5DLQmRch8vWpjP5FKdo8VphOltgnIgP-jI
 
 Keep this page open; you'll need these values in the next step.
 
@@ -86,11 +92,13 @@ GitHub Secrets securely store your Supabase credentials:
 2. Click **Settings** → **Secrets and variables** → **Actions**
 3. Click **New repository secret** and add these secrets one by one:
 
-| Secret Name | Value | Notes |
-|-------------|-------|-------|
-| `SUPABASE_URL` | `https://xxxxx.supabase.co` | Your Project URL from Supabase |
-| `SUPABASE_SERVICE_KEY` | `eyJhbGciOiJ...` | The service_role key (NOT the anon key) |
-| `NEWS_API_KEY` | `your-newsapi-key` | **Optional:** Get one free at [newsapi.org](https://newsapi.org) |
+
+| Secret Name            | Value                              | Notes                                                            |
+| ---------------------- | ---------------------------------- | ---------------------------------------------------------------- |
+| `SUPABASE_URL`         | `https://xxxxx.supabase.co`        | Your Project URL from Supabase                                   |
+| `SUPABASE_SERVICE_KEY` | `eyJhbGciOiJ...`                   | The service_role key (NOT the anon key)                          |
+| `NEWS_API_KEY`         | `53a03b676218439c9efa6d69cb87d94e` | **Optional:** Get one free at [newsapi.org](https://newsapi.org) |
+
 
 **Important:** The `SUPABASE_SERVICE_KEY` is powerful - it bypasses Row Level Security. Only use it in server-side code (like GitHub Actions), never in frontend code.
 
@@ -103,9 +111,9 @@ GitHub Actions should be enabled by default on forked repos, but let's verify:
 1. Go to the **Actions** tab in your repository
 2. If you see "Workflows aren't being run on this repository," click **I understand my workflows, go ahead and enable them**
 3. You should now see three workflows listed:
-   - Fetch AI News
-   - Purge Old Data
-   - Monitor Storage
+  - Fetch AI News
+  - Purge Old Data
+  - Monitor Storage
 
 ---
 
@@ -119,6 +127,7 @@ Let's test everything by manually triggering a news fetch:
 4. Click into the run to see detailed logs
 
 If successful, you should see log output like:
+
 ```
 Starting AI News Fetcher
 Found 8 active sources
@@ -154,16 +163,17 @@ Before this will work, you need to add your Supabase credentials:
 
 1. Edit `frontend/index.html`
 2. Find these lines near the bottom:
-   ```javascript
+  ```javascript
    const SUPABASE_URL = 'YOUR_SUPABASE_URL';
    const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY';
-   ```
+  ```
 3. Replace with your actual values (use the **anon** key here, not service_role!)
 4. Commit and push the changes
 
 ### Option B: Other Hosting
 
 You can also host `frontend/index.html` on:
+
 - Netlify (drag & drop the frontend folder)
 - Vercel
 - Cloudflare Pages
@@ -192,11 +202,11 @@ Add more RSS feeds by inserting into the `sources` table:
 1. Go to Supabase **Table Editor** → **sources**
 2. Click **Insert row**
 3. Fill in:
-   - `name`: The source name (e.g., "Wired AI")
-   - `url`: The RSS feed URL
-   - `source_type`: `rss`
-   - `is_active`: `true`
-   - `fetch_interval_minutes`: `360` (6 hours)
+  - `name`: The source name (e.g., "Wired AI")
+  - `url`: The RSS feed URL
+  - `source_type`: `rss`
+  - `is_active`: `true`
+  - `fetch_interval_minutes`: `360` (6 hours)
 
 The next fetch cycle will include your new source.
 
@@ -246,11 +256,13 @@ If you need to free up space immediately:
 
 This entire setup runs within free tier limits:
 
-| Service | Free Limit | Our Usage |
-|---------|------------|-----------|
-| Supabase Database | 500 MB | ~20-50 MB typically |
-| Supabase Bandwidth | 2 GB/month | Depends on frontend traffic |
-| GitHub Actions | Unlimited (public repos) | ~10 min/day |
+
+| Service            | Free Limit               | Our Usage                   |
+| ------------------ | ------------------------ | --------------------------- |
+| Supabase Database  | 500 MB                   | ~20-50 MB typically         |
+| Supabase Bandwidth | 2 GB/month               | Depends on frontend traffic |
+| GitHub Actions     | Unlimited (public repos) | ~10 min/day                 |
+
 
 As long as you keep the repository public and don't store excessive data, everything stays free.
 
