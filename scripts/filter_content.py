@@ -41,6 +41,14 @@ RATE_LIMIT_DELAY = 0.5  # Seconds between API calls
 MIN_RELEVANCE_SCORE = 6  # Minimum score to approve (1-10)
 MIN_CONTENT_LENGTH = 50  # Minimum characters to process
 
+# Model selection — ordered by preference (newest first)
+PREFERRED_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-1.5-flash",
+]
+
 # Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -95,6 +103,51 @@ Article Content:
 Respond with JSON only:"""
 
 # =============================================================================
+# MODEL DISCOVERY
+# =============================================================================
+
+def discover_best_model() -> str:
+    """
+    Queries the Gemini API for available models and returns the best
+    Flash model from our preferred list.  Falls back to any available
+    flash model if none of the preferred ones are found.
+    """
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    try:
+        available_models: set[str] = set()
+        for m in client.models.list():
+            available_models.add(m.name)                       # e.g. "models/gemini-2.0-flash"
+            available_models.add(m.name.replace("models/", ""))  # e.g. "gemini-2.0-flash"
+
+        logger.info(f"Available Gemini models: {sorted(n for n in available_models if 'flash' in n and '/' not in n)}")
+
+        # 1) Check preferred list in order
+        for model in PREFERRED_MODELS:
+            if model in available_models or f"models/{model}" in available_models:
+                logger.info(f"Selected preferred model: {model}")
+                return model
+
+        # 2) Fallback: pick the newest flash model that supports generateContent
+        flash_models = sorted(
+            [n for n in available_models if "flash" in n and "/" not in n],
+            reverse=True,
+        )
+        if flash_models:
+            logger.warning(f"No preferred model found. Falling back to: {flash_models[0]}")
+            return flash_models[0]
+
+        raise RuntimeError(
+            "No suitable Gemini Flash model found. "
+            f"Available models: {sorted(available_models)}"
+        )
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -122,15 +175,6 @@ def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def setup_gemini() -> None:
-    """
-    Placeholder for compatibility. The new google.genai client is
-    instantiated per request inside filter_article to avoid using a
-    closed client between calls.
-    """
-    return None
-
-
 def parse_filter_response(response_text: str) -> Optional[Dict]:
     """Parses the JSON response from Gemini."""
     try:
@@ -149,7 +193,7 @@ def parse_filter_response(response_text: str) -> Optional[Dict]:
         return None
 
 
-def filter_article(title: str, content: str) -> Dict:
+def filter_article(title: str, content: str, model_name: str) -> Dict:
     """
     Filters an article using Gemini AI.
     
@@ -187,7 +231,7 @@ def filter_article(title: str, content: str) -> Dict:
     try:
         client = genai.Client(api_key=GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-1.5-flash",
+            model=model_name,
             contents=prompt,
             config={
                 "temperature": 0.1,
@@ -340,7 +384,11 @@ def process_articles():
     # Initialize clients
     logger.info("Initializing Supabase and Gemini...")
     supabase = get_supabase_client()
-    setup_gemini()  # no-op; kept for backwards compatibility
+
+    # Auto-discover the best available Gemini Flash model
+    logger.info("Discovering best available Gemini model...")
+    model_name = discover_best_model()
+    logger.info(f"Using model: {model_name}")
     
     # Get initial statistics
     stats_before = get_filter_statistics(supabase)
@@ -362,6 +410,7 @@ def process_articles():
         'approved': 0,
         'rejected_language': 0,
         'rejected_relevance': 0,
+        'rejected_short': 0,
         'failed': 0
     }
     
@@ -376,7 +425,7 @@ def process_articles():
         logger.info(f"\n[{i}/{len(articles)}] Filtering: {short_title}")
         
         # Filter the article
-        filter_result = filter_article(title, content)
+        filter_result = filter_article(title, content, model_name)
         
         # Update database
         if update_article_filter(supabase, article_id, filter_result):
@@ -387,9 +436,15 @@ def process_articles():
                 logger.info(f"  ✓ APPROVED ({filter_result['detected_language']}, score: {filter_result['relevance_score']}/10)")
             else:
                 # Categorize rejection reason
-                if filter_result['detected_language'] != 'en':
+                if filter_result['filter_reason'] == 'Content too short':
+                    results['rejected_short'] += 1
+                    logger.info(f"  ✗ REJECTED: Content too short (< {MIN_CONTENT_LENGTH} chars)")
+                elif filter_result['detected_language'] not in ('en', 'unknown'):
                     results['rejected_language'] += 1
                     logger.info(f"  ✗ REJECTED: Non-English ({filter_result['detected_language']})")
+                elif filter_result['detected_language'] == 'unknown':
+                    results['failed'] += 1
+                    logger.warning(f"  ✗ FAILED: Could not analyze — {filter_result['filter_reason']}")
                 else:
                     results['rejected_relevance'] += 1
                     logger.info(f"  ✗ REJECTED: {filter_result['filter_reason']}")
@@ -414,11 +469,13 @@ def process_articles():
     logger.info("\n" + "=" * 60)
     logger.info("CONTENT FILTER COMPLETE")
     logger.info("=" * 60)
+    logger.info(f"  Model used:          {model_name}")
     logger.info(f"  Processed:           {results['processed']}")
     logger.info(f"  ✓ Approved:          {results['approved']}")
     logger.info(f"  ✗ Rejected (lang):   {results['rejected_language']}")
     logger.info(f"  ✗ Rejected (topic):  {results['rejected_relevance']}")
-    logger.info(f"  Failed:              {results['failed']}")
+    logger.info(f"  ✗ Rejected (short):  {results['rejected_short']}")
+    logger.info(f"  Failed/errors:       {results['failed']}")
     logger.info("-" * 40)
     logger.info("Database Status:")
     logger.info(f"  Total articles:      {stats_after['total']}")
