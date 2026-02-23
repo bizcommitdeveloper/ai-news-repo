@@ -87,6 +87,30 @@ jobs:
         run: python fetch_news.py
 
       # ========================================
+      # FILTER & SUMMARIZE (GEMINI)
+      # ========================================
+
+      - name: Filter AI Content (Gemini)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LOG_LEVEL: ${{ inputs.verbose == 'true' && 'DEBUG' || 'INFO' }}
+          VERBOSE_LOGGING: ${{ inputs.verbose }}
+        working-directory: scripts
+        run: python filter_content.py
+
+      - name: Summarize Articles (Gemini)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LOG_LEVEL: ${{ inputs.verbose == 'true' && 'DEBUG' || 'INFO' }}
+          VERBOSE_LOGGING: ${{ inputs.verbose }}
+        working-directory: scripts
+        run: python summarize_articles.py
+
+      # ========================================
       # NOTIFICATIONS (Optional)
       # ========================================
       # Uncomment and configure if you want Slack/Discord notifications
