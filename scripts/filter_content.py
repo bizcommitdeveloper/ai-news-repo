@@ -22,8 +22,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 
-from google import genai
-from google.genai import types as genai_types
+from groq import Groq
 from supabase import create_client, Client
 
 # =============================================================================
@@ -34,8 +33,7 @@ from supabase import create_client, Client
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
-# Google Gemini AI
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 # Processing settings
 BATCH_SIZE = 100  # Articles per run (filter is fast)
@@ -44,14 +42,10 @@ MAX_RETRIES = 3  # Max retries on 429 rate-limit errors
 MIN_RELEVANCE_SCORE = 6  # Minimum score to approve (1-10)
 MIN_CONTENT_LENGTH = 50  # Minimum characters to process
 
-# Model selection — ordered by preference
-# IMPORTANT: gemini-2.0-flash has 15 RPM free-tier vs 5 RPM for 2.5-flash.
-# Always prefer 2.0-flash for batch workloads on the free tier.
 PREFERRED_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-1.5-flash",
+    "llama-3-70b-8192",
+    "llama-3-8b-8192",
+    "mixtral-8x7b-32768",
 ]
 
 # Logging
@@ -107,43 +101,9 @@ Respond with valid JSON only. Use double quotes for all keys and string values."
 
 def discover_best_model() -> str:
     """
-    Queries the Gemini API for available models and returns the best
-    Flash model from our preferred list.  Falls back to any available
-    flash model if none of the preferred ones are found.
+    Returns the best Groq model from the preferred list.
     """
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    try:
-        available_models: set[str] = set()
-        for m in client.models.list():
-            available_models.add(m.name)                       # e.g. "models/gemini-2.0-flash"
-            available_models.add(m.name.replace("models/", ""))  # e.g. "gemini-2.0-flash"
-
-        logger.info(f"Available Gemini models: {sorted(n for n in available_models if 'flash' in n and '/' not in n)}")
-
-        # 1) Check preferred list in order
-        for model in PREFERRED_MODELS:
-            if model in available_models or f"models/{model}" in available_models:
-                logger.info(f"Selected preferred model: {model}")
-                return model
-
-        # 2) Fallback: pick the newest flash model that supports generateContent
-        flash_models = sorted(
-            [n for n in available_models if "flash" in n and "/" not in n],
-            reverse=True,
-        )
-        if flash_models:
-            logger.warning(f"No preferred model found. Falling back to: {flash_models[0]}")
-            return flash_models[0]
-
-        raise RuntimeError(
-            "No suitable Gemini Flash model found. "
-            f"Available models: {sorted(available_models)}"
-        )
-    finally:
-        try:
-            client.close()
-        except Exception:
-            pass
+    return PREFERRED_MODELS[0]
 
 
 # =============================================================================
@@ -151,21 +111,17 @@ def discover_best_model() -> str:
 # =============================================================================
 
 def validate_config() -> bool:
-    """Validates required environment variables."""
     errors = []
-    
     if not SUPABASE_URL:
         errors.append("SUPABASE_URL is not set")
     if not SUPABASE_SERVICE_KEY:
         errors.append("SUPABASE_SERVICE_KEY is not set")
-    if not GEMINI_API_KEY:
-        errors.append("GEMINI_API_KEY is not set")
-    
+    if not GROQ_API_KEY:
+        errors.append("GROQ_API_KEY is not set")
     if errors:
         for error in errors:
             logger.error(f"Configuration error: {error}")
         return False
-    
     return True
 
 
@@ -281,16 +237,6 @@ def _parse_retry_delay(error_msg: str) -> float:
 
 
 def filter_article(title: str, content: str, model_name: str) -> Dict:
-    """
-    Filters an article using Gemini AI with retry on rate limits.
-    
-    Returns a dict with:
-    - is_approved: bool
-    - detected_language: str
-    - relevance_score: int
-    - filter_reason: str
-    - category: str
-    """
     default_result = {
         'is_approved': False,
         'detected_language': 'unknown',
@@ -298,50 +244,29 @@ def filter_article(title: str, content: str, model_name: str) -> Dict:
         'filter_reason': 'Failed to analyze',
         'category': 'general'
     }
-    
-    # Skip if content too short
     if not content or len(content.strip()) < MIN_CONTENT_LENGTH:
         default_result['filter_reason'] = 'Content too short'
         return default_result
-    
-    # Truncate content for faster processing
     if len(content) > 2000:
         content = content[:2000] + "..."
-    
     prompt = FILTER_PROMPT.replace("{title}", title).replace("{content}", content)
-    
-    client = None
     last_error = None
-
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            client = genai.Client(api_key=GEMINI_API_KEY)
-
-            config = genai_types.GenerateContentConfig(
-                temperature=0.1,
-                top_p=0.95,
-                max_output_tokens=1024,
-                response_mime_type="application/json",
-            )
-
-            response = client.models.generate_content(
+            client = Groq(api_key=GROQ_API_KEY)
+            response = client.chat.completions.create(
                 model=model_name,
-                contents=prompt,
-                config=config,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=1024,
             )
-
-            # google-genai responses expose .text; fall back to first candidate part.
-            text = getattr(response, "text", None)
-            if not text and getattr(response, "candidates", None):
-                text = str(response.candidates[0].content.parts[0].text)
+            text = response.choices[0].message.content
             if text:
                 result = parse_filter_response(text)
-                
                 if result:
                     is_english = result.get('is_english', False)
                     relevance_score = result.get('relevance_score', 0)
                     is_relevant = result.get('is_relevant', False) and relevance_score >= MIN_RELEVANCE_SCORE
-                    
                     return {
                         'is_approved': is_english and is_relevant,
                         'detected_language': result.get('language', 'unknown'),
@@ -351,50 +276,13 @@ def filter_article(title: str, content: str, model_name: str) -> Dict:
                     }
                 else:
                     logger.warning(f"Could not parse response: {text[:200]}")
-
-            # If we got a 200 but couldn't parse, don't retry (won't help)
             break
-
         except Exception as e:
             last_error = e
-            error_str = str(e)
-
-            # Detect 429 rate-limit errors robustly:
-            # check the exception attribute first, then fall back to string matching
-            is_rate_limited = (
-                getattr(e, 'status_code', None) == 429
-                or '429' in error_str
-                or 'RESOURCE_EXHAUSTED' in error_str
-            )
-
-            if is_rate_limited:
-                retry_delay = _parse_retry_delay(error_str)
-                # Use at least 5 seconds, at most 65 seconds
-                wait_time = max(5, min(retry_delay + 2, 65))
-
-                if attempt < MAX_RETRIES:
-                    logger.warning(
-                        f"Rate limited (attempt {attempt}/{MAX_RETRIES}). "
-                        f"Waiting {wait_time:.0f}s before retry..."
-                    )
-                    time.sleep(wait_time)
-                    continue
-                else:
-                    logger.error(f"Rate limited on all {MAX_RETRIES} attempts. Skipping article.")
-            else:
-                logger.error(f"Gemini API error: {e}")
-                break  # Don't retry non-rate-limit errors
-        finally:
-            if client is not None:
-                try:
-                    client.close()
-                except Exception:
-                    pass
-                client = None
-
+            logger.error(f"Groq API error: {e}")
+            time.sleep(RATE_LIMIT_DELAY)
     if last_error:
         default_result['filter_reason'] = f'API error: {str(last_error)[:50]}'
-
     return default_result
 
 
@@ -508,11 +396,9 @@ def process_articles():
         sys.exit(1)
     
     # Initialize clients
-    logger.info("Initializing Supabase and Gemini...")
+    logger.info("Initializing Supabase and Groq...")
     supabase = get_supabase_client()
-
-    # Auto-discover the best available Gemini Flash model
-    logger.info("Discovering best available Gemini model...")
+    logger.info("Discovering best available Groq model...")
     model_name = discover_best_model()
     logger.info(f"Using model: {model_name}")
     

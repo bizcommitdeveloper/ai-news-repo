@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-from google import genai
+from groq import Groq
 from supabase import create_client, Client
 
 # =============================================================================
@@ -29,7 +29,7 @@ from supabase import create_client, Client
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
 
 # Processing settings
 BATCH_SIZE = 50
@@ -79,9 +79,8 @@ def validate_config() -> bool:
         errors.append("SUPABASE_URL is not set")
     if not SUPABASE_SERVICE_KEY:
         errors.append("SUPABASE_SERVICE_KEY is not set")
-    if not GEMINI_API_KEY:
-        errors.append("GEMINI_API_KEY is not set")
-    
+    if not GROQ_API_KEY:
+        errors.append("GROQ_API_KEY is not set")
     if errors:
         for error in errors:
             logger.error(f"Configuration error: {error}")
@@ -93,53 +92,43 @@ def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def setup_gemini():
-    return genai.Client(api_key=GEMINI_API_KEY)
+def setup_groq():
+    return Groq(api_key=GROQ_API_KEY)
 
 
 def count_words(text: str) -> int:
     return len(text.split())
 
 
-def generate_summary(client, title: str, content: str) -> Optional[str]:
     if not content or len(content.strip()) < 50:
         return None
-    
     if len(content) > 5000:
         content = content[:5000] + "..."
-    
     prompt = SUMMARY_PROMPT.format(title=title, content=content)
-    
     for attempt in range(MAX_RETRIES):
         try:
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=prompt,
-                config={
-                    "temperature": 0.7,
-                    "top_p": 0.95,
-                    "max_output_tokens": 200,
-                },
+            response = client.chat.completions.create(
+                model="llama-3-70b-8192",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.7,
+                max_tokens=200,
             )
-            text = response.text if hasattr(response, "text") else str(response.candidates[0].content.parts[0].text)
+            text = response.choices[0].message.content
             if text:
                 summary = text.strip()
                 if summary.startswith('"') and summary.endswith('"'):
                     summary = summary[1:-1]
-                
                 word_count = count_words(summary)
                 if 50 <= word_count <= 75:
                     return summary
                 else:
                     logger.warning(f"Summary has {word_count} words, retrying...")
                     continue
-            
         except Exception as e:
-            logger.error(f"Gemini API error (attempt {attempt + 1}): {e}")
+            logger.error(f"Groq API error (attempt {attempt + 1}): {e}")
             if attempt < MAX_RETRIES - 1:
                 time.sleep(2 ** attempt)
             continue
-    
     return None
 
 
@@ -202,9 +191,9 @@ def process_articles():
         logger.error("Configuration validation failed!")
         sys.exit(1)
     
-    logger.info("Initializing Supabase and Gemini...")
+    logger.info("Initializing Supabase and Groq...")
     supabase = get_supabase_client()
-    gemini_client = setup_gemini()
+    groq_client = setup_groq()
     
     # Only fetch APPROVED articles
     logger.info(f"Fetching up to {BATCH_SIZE} approved, unsummarized articles...")
@@ -227,18 +216,14 @@ def process_articles():
         article_id = article['id']
         title = article.get('title', 'Untitled')
         content = article.get('content') or article.get('description') or ''
-        
         short_title = title[:50] + "..." if len(title) > 50 else title
         logger.info(f"\n[{i}/{len(articles)}] Summarizing: {short_title}")
-        
         if not content or len(content.strip()) < 100:
             logger.warning(f"  Skipping - insufficient content")
             mark_article_skipped(supabase, article_id)
             stats['skipped'] += 1
             continue
-        
-        summary = generate_summary(gemini_client, title, content)
-        
+        summary = generate_summary(groq_client, title, content)
         if summary:
             if update_article_summary(supabase, article_id, summary):
                 word_count = count_words(summary)
@@ -251,7 +236,6 @@ def process_articles():
             logger.warning(f"  ✗ Could not generate summary")
             mark_article_skipped(supabase, article_id)
             stats['skipped'] += 1
-        
         stats['processed'] += 1
         time.sleep(RATE_LIMIT_DELAY)
     
