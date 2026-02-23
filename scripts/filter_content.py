@@ -122,7 +122,7 @@ def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def setup_gemini() -> genai.GenerativeModel:
+def setup_gemini() -> Any:
     """Configures and returns Gemini model."""
     client = genai.Client(api_key=GEMINI_API_KEY)
     return client.models.generate_content
