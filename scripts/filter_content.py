@@ -16,12 +16,14 @@ Runs AFTER fetch_news.py and BEFORE summarize_articles.py
 import os
 import sys
 import json
+import re
 import time
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 
 from google import genai
+from google.genai import types as genai_types
 from supabase import create_client, Client
 
 # =============================================================================
@@ -37,15 +39,18 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # Processing settings
 BATCH_SIZE = 100  # Articles per run (filter is fast)
-RATE_LIMIT_DELAY = 0.5  # Seconds between API calls
+RATE_LIMIT_DELAY = 4.5  # Seconds between API calls (safe for 15 RPM free tier)
+MAX_RETRIES = 3  # Max retries on 429 rate-limit errors
 MIN_RELEVANCE_SCORE = 6  # Minimum score to approve (1-10)
 MIN_CONTENT_LENGTH = 50  # Minimum characters to process
 
-# Model selection — ordered by preference (newest first)
+# Model selection — ordered by preference
+# IMPORTANT: gemini-2.0-flash has 15 RPM free-tier vs 5 RPM for 2.5-flash.
+# Always prefer 2.0-flash for batch workloads on the free tier.
 PREFERRED_MODELS = [
-    "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-2.0-flash-lite",
+    "gemini-2.5-flash",
     "gemini-1.5-flash",
 ]
 
@@ -63,16 +68,10 @@ logger = logging.getLogger(__name__)
 
 FILTER_PROMPT = """You are a content filter for an AI/Technology news app.
 
-Analyze this article and respond with a JSON object ONLY (no other text):
+Analyze this article and respond with a JSON object ONLY (no markdown, no code fences, no other text).
 
-{
-  "language": "en",
-  "is_english": true,
-  "relevance_score": 8,
-  "is_relevant": true,
-  "category": "machine-learning",
-  "reason": "Brief explanation"
-}
+Example response format:
+{"language": "en", "is_english": true, "relevance_score": 8, "is_relevant": true, "category": "machine-learning", "reason": "Brief explanation"}
 
 RULES:
 1. language: ISO 639-1 code (en, es, zh, hi, fr, etc.)
@@ -100,7 +99,7 @@ Article Title: {title}
 Article Content:
 {content}
 
-Respond with JSON only:"""
+Respond with valid JSON only. Use double quotes for all keys and string values."""
 
 # =============================================================================
 # MODEL DISCOVERY
@@ -176,26 +175,114 @@ def get_supabase_client() -> Client:
 
 
 def parse_filter_response(response_text: str) -> Optional[Dict]:
-    """Parses the JSON response from Gemini."""
-    try:
-        # Clean up response - remove markdown code blocks if present
-        text = response_text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        if text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        
-        return json.loads(text.strip())
-    except json.JSONDecodeError as e:
-        logger.warning(f"Failed to parse JSON: {e}")
+    """Parses the JSON response from Gemini with robust error handling.
+
+    Handles common Gemini quirks:
+    - Markdown code fences around JSON
+    - Python-style single quotes, True/False/None
+    - Truncated output (attempts to close the object)
+    - Trailing commas
+    """
+    if not response_text:
         return None
+
+    text = response_text.strip()
+
+    # 1) Strip markdown code fences (```json ... ``` or ``` ... ```)
+    text = re.sub(r'^```(?:json)?\s*\n?', '', text)
+    text = re.sub(r'\n?```\s*$', '', text)
+    text = text.strip()
+
+    # Helper: try json.loads and return result or None
+    def _try_parse(s: str) -> Optional[Dict]:
+        try:
+            obj = json.loads(s)
+            return obj if isinstance(obj, dict) else None
+        except (json.JSONDecodeError, ValueError):
+            return None
+
+    # 2) Try direct JSON parse first
+    result = _try_parse(text)
+    if result:
+        return result
+
+    # 3) Normalise Python-style → JSON  (do this BEFORE extracting the object)
+    def _normalise(s: str) -> str:
+        # Python booleans / None → JSON equivalents
+        s = re.sub(r'\bTrue\b', 'true', s)
+        s = re.sub(r'\bFalse\b', 'false', s)
+        s = re.sub(r'\bNone\b', 'null', s)
+        # Single-quoted keys:  'key':  →  "key":
+        s = re.sub(r"'(\w[\w-]*)'\s*:", r'"\1":', s)
+        # Single-quoted string values after colon: : 'value'  →  : "value"
+        s = re.sub(r":\s*'([^']*?)'", r': "\1"', s)
+        # Trailing commas before closing brace
+        s = re.sub(r',\s*}', '}', s)
+        return s
+
+    normed = _normalise(text)
+    result = _try_parse(normed)
+    if result:
+        return result
+
+    # 4) Extract a JSON-like object from surrounding text and try again
+    for candidate in (text, normed):
+        match = re.search(r'\{[^{}]*\}', candidate, re.DOTALL)
+        if match:
+            result = _try_parse(match.group())
+            if result:
+                return result
+            # Also try normalising just the extracted part
+            result = _try_parse(_normalise(match.group()))
+            if result:
+                return result
+
+    # 5) Handle truncated JSON — try to close the object
+    for candidate in (normed, text):
+        if '{' in candidate:
+            # Find the opening brace
+            start = candidate.index('{')
+            fragment = candidate[start:]
+            # Remove a possible truncated value at the end
+            fragment = re.sub(r',?\s*"[^"]*"\s*:\s*"?[^"{}]*$', '', fragment)
+            fragment = fragment.rstrip(', \t\n')
+            if not fragment.endswith('}'):
+                fragment += '}'
+            result = _try_parse(fragment)
+            if result:
+                return result
+
+    logger.warning(f"Failed to parse JSON: {json.dumps(text[:300])}")
+    return None
+
+
+def _parse_retry_delay(error_msg: str) -> float:
+    """Extract retry delay from Gemini 429 error message.
+
+    Handles formats like:
+    - "Please retry in 21.948799732s."
+    - "Please retry in 442.116389ms."
+    - "'retryDelay': '21s'"
+    """
+    msg = str(error_msg)
+    # "retry in Xs" (seconds)
+    match = re.search(r'retry in (\d+(?:\.\d+)?)s', msg)
+    if match:
+        return float(match.group(1))
+    # "retry in Xms" (milliseconds)
+    match = re.search(r'retry in (\d+(?:\.\d+)?)ms', msg)
+    if match:
+        return float(match.group(1)) / 1000.0
+    # JSON body format: 'retryDelay': '21s'
+    match = re.search(r"retryDelay['\"]:\s*['\"](\d+(?:\.\d+)?)s['\"]", msg)
+    if match:
+        return float(match.group(1))
+    return 0
 
 
 def filter_article(title: str, content: str, model_name: str) -> Dict:
     """
-    Filters an article using Gemini AI.
+    Filters an article using Gemini AI with retry on rate limits.
     
     Returns a dict with:
     - is_approved: bool
@@ -221,54 +308,93 @@ def filter_article(title: str, content: str, model_name: str) -> Dict:
     if len(content) > 2000:
         content = content[:2000] + "..."
     
-    # NOTE:
-    # FILTER_PROMPT contains literal JSON braces ({, }) in the example payload.
-    # Using str.format(...) would treat those as placeholders and raise KeyError.
-    # We only want to substitute {title} and {content}, so we do simple replacements.
     prompt = FILTER_PROMPT.replace("{title}", title).replace("{content}", content)
     
     client = None
-    try:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config={
-                "temperature": 0.1,
-                "top_p": 0.95,
-                "max_output_tokens": 300,
-            },
-        )
-        # google-genai responses expose .text; fall back to first candidate part.
-        text = getattr(response, "text", None)
-        if not text and getattr(response, "candidates", None):
-            text = str(response.candidates[0].content.parts[0].text)
-        if text:
-            result = parse_filter_response(text)
-            
-            if result:
-                is_english = result.get('is_english', False)
-                relevance_score = result.get('relevance_score', 0)
-                is_relevant = result.get('is_relevant', False) and relevance_score >= MIN_RELEVANCE_SCORE
+    last_error = None
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            client = genai.Client(api_key=GEMINI_API_KEY)
+
+            config = genai_types.GenerateContentConfig(
+                temperature=0.1,
+                top_p=0.95,
+                max_output_tokens=1024,
+                response_mime_type="application/json",
+            )
+
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
+
+            # google-genai responses expose .text; fall back to first candidate part.
+            text = getattr(response, "text", None)
+            if not text and getattr(response, "candidates", None):
+                text = str(response.candidates[0].content.parts[0].text)
+            if text:
+                result = parse_filter_response(text)
                 
-                return {
-                    'is_approved': is_english and is_relevant,
-                    'detected_language': result.get('language', 'unknown'),
-                    'relevance_score': relevance_score,
-                    'filter_reason': result.get('reason', 'No reason provided'),
-                    'category': result.get('category', 'general')
-                }
-    
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        default_result['filter_reason'] = f'API error: {str(e)[:50]}'
-    finally:
-        if client is not None:
-            try:
-                client.close()
-            except Exception:
-                pass
-    
+                if result:
+                    is_english = result.get('is_english', False)
+                    relevance_score = result.get('relevance_score', 0)
+                    is_relevant = result.get('is_relevant', False) and relevance_score >= MIN_RELEVANCE_SCORE
+                    
+                    return {
+                        'is_approved': is_english and is_relevant,
+                        'detected_language': result.get('language', 'unknown'),
+                        'relevance_score': relevance_score,
+                        'filter_reason': result.get('reason', 'No reason provided'),
+                        'category': result.get('category', 'general')
+                    }
+                else:
+                    logger.warning(f"Could not parse response: {text[:200]}")
+
+            # If we got a 200 but couldn't parse, don't retry (won't help)
+            break
+
+        except Exception as e:
+            last_error = e
+            error_str = str(e)
+
+            # Detect 429 rate-limit errors robustly:
+            # check the exception attribute first, then fall back to string matching
+            is_rate_limited = (
+                getattr(e, 'status_code', None) == 429
+                or '429' in error_str
+                or 'RESOURCE_EXHAUSTED' in error_str
+            )
+
+            if is_rate_limited:
+                retry_delay = _parse_retry_delay(error_str)
+                # Use at least 5 seconds, at most 65 seconds
+                wait_time = max(5, min(retry_delay + 2, 65))
+
+                if attempt < MAX_RETRIES:
+                    logger.warning(
+                        f"Rate limited (attempt {attempt}/{MAX_RETRIES}). "
+                        f"Waiting {wait_time:.0f}s before retry..."
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    logger.error(f"Rate limited on all {MAX_RETRIES} attempts. Skipping article.")
+            else:
+                logger.error(f"Gemini API error: {e}")
+                break  # Don't retry non-rate-limit errors
+        finally:
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+                client = None
+
+    if last_error:
+        default_result['filter_reason'] = f'API error: {str(last_error)[:50]}'
+
     return default_result
 
 
@@ -452,8 +578,9 @@ def process_articles():
             results['failed'] += 1
             logger.error(f"  ✗ Failed to update article")
         
-        # Rate limiting
-        time.sleep(RATE_LIMIT_DELAY)
+        # Rate limiting — skip delay for "content too short" (no API call made)
+        if filter_result['filter_reason'] != 'Content too short':
+            time.sleep(RATE_LIMIT_DELAY)
     
     # Clean up old rejected articles
     logger.info("\n" + "-" * 40)
