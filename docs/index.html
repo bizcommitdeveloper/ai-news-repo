@@ -2,150 +2,365 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI News Aggregator</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI News Shorts</title>
     
-    <!-- 
-    =====================================================================
-    AI News Aggregator Frontend
-    =====================================================================
-    This is a simple, static HTML page that fetches and displays AI news 
-    from your Supabase database. It can be hosted on GitHub Pages, 
-    Netlify, Vercel, or any static hosting service.
-    
-    To use:
-    1. Replace YOUR_SUPABASE_URL with your actual Supabase project URL
-    2. Replace YOUR_ANON_KEY with your Supabase anon (public) key
-    3. Host this file on your preferred platform
-    
-    The anon key is safe to expose publicly - it only allows read access
-    to data permitted by your Row Level Security policies.
-    =====================================================================
-    -->
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
     <style>
         /* ============================================= */
-        /* CSS Variables for easy theming               */
+        /* CSS Variables                                */
         /* ============================================= */
         :root {
-            --primary-color: #6366f1;
-            --primary-hover: #4f46e5;
-            --bg-color: #0f172a;
-            --surface-color: #1e293b;
-            --surface-hover: #334155;
-            --text-primary: #f1f5f9;
-            --text-secondary: #94a3b8;
-            --text-muted: #64748b;
-            --border-color: #334155;
-            --success-color: #22c55e;
-            --warning-color: #f59e0b;
-            --error-color: #ef4444;
-            --gradient-start: #6366f1;
-            --gradient-end: #8b5cf6;
+            --bg-primary: #1a1a2e;
+            --bg-secondary: #16213e;
+            --bg-card: #ffffff;
+            --text-dark: #1a1a2e;
+            --text-light: #ffffff;
+            --text-muted: #6b7280;
+            --accent: #e94560;
+            --accent-light: #ff6b6b;
+            --success: #10b981;
+            --border-radius: 16px;
+            --card-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
         }
 
         /* ============================================= */
-        /* Base styles                                  */
+        /* Reset & Base                                 */
         /* ============================================= */
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: var(--bg-color);
-            color: var(--text-primary);
-            line-height: 1.6;
-            min-height: 100vh;
+            background: var(--bg-primary);
+            color: var(--text-light);
+            line-height: 1.5;
         }
 
         /* ============================================= */
-        /* Header                                       */
+        /* App Container                                */
         /* ============================================= */
-        header {
-            background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
-            padding: 2rem;
-            text-align: center;
+        .app {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ============================================= */
+        /* Header with Category Tabs                    */
+        /* ============================================= */
+        .header {
+            background: var(--bg-secondary);
+            padding: 12px 0 0 0;
             position: sticky;
             top: 0;
             z-index: 100;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
 
-        header h1 {
-            font-size: 2rem;
+        .header-title {
+            text-align: center;
+            padding: 8px 16px;
+        }
+
+        .header-title h1 {
+            font-size: 1.25rem;
             font-weight: 700;
-            margin-bottom: 0.5rem;
-        }
-
-        header p {
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 1rem;
-        }
-
-        /* ============================================= */
-        /* Navigation / Filters                         */
-        /* ============================================= */
-        .filters {
-            background: var(--surface-color);
-            padding: 1rem 2rem;
             display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
+            align-items: center;
             justify-content: center;
-            border-bottom: 1px solid var(--border-color);
+            gap: 8px;
         }
 
-        .filter-btn {
+        .header-title h1 span {
+            color: var(--accent);
+        }
+
+        /* Category Tabs - Scrollable */
+        .category-tabs {
+            display: flex;
+            overflow-x: auto;
+            padding: 12px 16px;
+            gap: 8px;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        .category-tabs::-webkit-scrollbar {
+            display: none;
+        }
+
+        .tab {
+            flex-shrink: 0;
+            padding: 8px 16px;
+            border-radius: 20px;
+            border: none;
             background: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-secondary);
-            padding: 0.5rem 1rem;
-            border-radius: 9999px;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            font-weight: 500;
             cursor: pointer;
             transition: all 0.2s ease;
-            font-size: 0.875rem;
+            white-space: nowrap;
         }
 
-        .filter-btn:hover {
-            background: var(--surface-hover);
-            color: var(--text-primary);
+        .tab:hover {
+            color: var(--text-light);
         }
 
-        .filter-btn.active {
-            background: var(--primary-color);
-            border-color: var(--primary-color);
+        .tab.active {
+            background: var(--accent);
+            color: var(--text-light);
+        }
+
+        /* ============================================= */
+        /* Cards Container (Swipeable)                  */
+        /* ============================================= */
+        .cards-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            padding: 16px;
+        }
+
+        /* ============================================= */
+        /* News Card (Inshorts Style)                   */
+        /* ============================================= */
+        .news-card {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            margin: 16px;
+            background: var(--bg-card);
+            border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+            touch-action: pan-y;
+            cursor: grab;
+        }
+
+        .news-card:active {
+            cursor: grabbing;
+        }
+
+        .news-card.swiping {
+            transition: none;
+        }
+
+        .news-card.exit-up {
+            transform: translateY(-150%);
+            opacity: 0;
+        }
+
+        .news-card.exit-down {
+            transform: translateY(150%);
+            opacity: 0;
+        }
+
+        .news-card.hidden {
+            display: none;
+        }
+
+        /* Card Image */
+        .card-image {
+            width: 100%;
+            height: 220px;
+            object-fit: cover;
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-primary));
+        }
+
+        .card-image.placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            color: var(--accent);
+        }
+
+        /* Card Content */
+        .card-content {
+            flex: 1;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            color: var(--text-dark);
+        }
+
+        /* Source Badge */
+        .card-source {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(233, 69, 96, 0.1);
+            color: var(--accent);
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            width: fit-content;
+        }
+
+        /* Card Title */
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: 700;
+            line-height: 1.4;
+            margin-bottom: 12px;
+            color: var(--text-dark);
+        }
+
+        /* Card Summary (60 words) */
+        .card-summary {
+            flex: 1;
+            font-size: 0.9375rem;
+            line-height: 1.7;
+            color: #374151;
+        }
+
+        /* Card Footer */
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 16px;
+            margin-top: auto;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .card-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .card-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .action-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid #e5e7eb;
+            background: transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        .action-btn:hover {
+            background: #f3f4f6;
+        }
+
+        .action-btn.bookmarked {
+            background: var(--accent);
+            border-color: var(--accent);
             color: white;
         }
 
         /* ============================================= */
-        /* Main content area                            */
+        /* Tap to Read More Hint                        */
         /* ============================================= */
-        main {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 2rem;
+        .tap-hint {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+            padding: 40px 20px 20px;
+            color: white;
+            text-align: center;
+            pointer-events: none;
+        }
+
+        .tap-hint span {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.875rem;
         }
 
         /* ============================================= */
-        /* Loading state                                */
+        /* Swipe Instructions                           */
+        /* ============================================= */
+        .swipe-hint {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 30px;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            z-index: 200;
+            animation: fadeInUp 0.5s ease, pulse 2s ease infinite;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .swipe-hint.hidden {
+            display: none;
+        }
+
+        /* ============================================= */
+        /* Loading State                                */
         /* ============================================= */
         .loading {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 4rem;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
         }
 
         .spinner {
-            width: 40px;
-            height: 40px;
-            border: 3px solid var(--border-color);
-            border-top-color: var(--primary-color);
+            width: 50px;
+            height: 50px;
+            border: 3px solid var(--bg-secondary);
+            border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
         }
 
         @keyframes spin {
@@ -153,345 +368,229 @@
         }
 
         /* ============================================= */
-        /* Error state                                  */
+        /* Empty State                                  */
         /* ============================================= */
-        .error {
-            background: rgba(239, 68, 68, 0.1);
-            border: 1px solid var(--error-color);
-            border-radius: 8px;
-            padding: 1.5rem;
+        .empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             text-align: center;
-            color: var(--error-color);
+            padding: 20px;
         }
 
-        /* ============================================= */
-        /* Article grid                                 */
-        /* ============================================= */
-        .articles-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-            gap: 1.5rem;
+        .empty-state h2 {
+            font-size: 1.25rem;
+            margin-bottom: 8px;
         }
 
-        /* ============================================= */
-        /* Article card                                 */
-        /* ============================================= */
-        .article-card {
-            background: var(--surface-color);
-            border-radius: 12px;
-            overflow: hidden;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            display: flex;
-            flex-direction: column;
-            border: 1px solid var(--border-color);
-        }
-
-        .article-card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .article-image {
-            width: 100%;
-            height: 180px;
-            object-fit: cover;
-            background: var(--surface-hover);
-        }
-
-        .article-image.placeholder {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 3rem;
+        .empty-state p {
             color: var(--text-muted);
         }
 
-        .article-content {
-            padding: 1.25rem;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
+        /* ============================================= */
+        /* Progress Indicator                           */
+        /* ============================================= */
+        .progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--bg-secondary);
+            z-index: 300;
         }
 
-        .article-meta {
-            display: flex;
-            gap: 0.75rem;
-            margin-bottom: 0.75rem;
-            flex-wrap: wrap;
-        }
-
-        .category-tag {
-            background: rgba(99, 102, 241, 0.2);
-            color: var(--primary-color);
-            padding: 0.25rem 0.75rem;
-            border-radius: 9999px;
-            font-size: 0.75rem;
-            font-weight: 500;
-            text-transform: uppercase;
-        }
-
-        .article-date {
-            color: var(--text-muted);
-            font-size: 0.75rem;
-        }
-
-        .article-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 0.75rem;
-            line-height: 1.4;
-            color: var(--text-primary);
-        }
-
-        .article-title a {
-            color: inherit;
-            text-decoration: none;
-        }
-
-        .article-title a:hover {
-            color: var(--primary-color);
-        }
-
-        .article-description {
-            color: var(--text-secondary);
-            font-size: 0.9rem;
-            flex: 1;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-
-        .article-source {
-            margin-top: 1rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border-color);
-            color: var(--text-muted);
-            font-size: 0.8rem;
+        .progress-bar {
+            height: 100%;
+            background: var(--accent);
+            transition: width 0.3s ease;
         }
 
         /* ============================================= */
-        /* Load more button                             */
+        /* Article Count Badge                          */
         /* ============================================= */
-        .load-more {
-            display: block;
-            width: 100%;
-            max-width: 300px;
-            margin: 2rem auto;
-            padding: 1rem 2rem;
-            background: var(--primary-color);
+        .article-count {
+            position: fixed;
+            top: 80px;
+            right: 16px;
+            background: var(--accent);
             color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 0.2s ease;
-        }
-
-        .load-more:hover {
-            background: var(--primary-hover);
-        }
-
-        .load-more:disabled {
-            background: var(--surface-hover);
-            cursor: not-allowed;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            z-index: 200;
         }
 
         /* ============================================= */
-        /* Footer                                       */
+        /* Responsive Adjustments                       */
         /* ============================================= */
-        footer {
-            text-align: center;
-            padding: 2rem;
-            color: var(--text-muted);
-            font-size: 0.875rem;
-            border-top: 1px solid var(--border-color);
-        }
-
-        footer a {
-            color: var(--primary-color);
-            text-decoration: none;
-        }
-
-        /* ============================================= */
-        /* Responsive adjustments                       */
-        /* ============================================= */
-        @media (max-width: 768px) {
-            header h1 {
-                font-size: 1.5rem;
+        @media (min-width: 768px) {
+            .cards-container {
+                max-width: 500px;
+                margin: 0 auto;
             }
-            
-            .articles-grid {
-                grid-template-columns: 1fr;
+
+            .news-card {
+                margin: 24px;
             }
-            
-            main {
-                padding: 1rem;
+
+            .card-image {
+                height: 280px;
             }
         }
     </style>
 </head>
 <body>
-    <!-- Header -->
-    <header>
-        <h1>🤖 AI News Aggregator</h1>
-        <p>The latest in artificial intelligence, updated every 6 hours</p>
-    </header>
-
-    <!-- Category filters -->
-    <nav class="filters" id="filters">
-        <button class="filter-btn active" data-category="all">All</button>
-        <button class="filter-btn" data-category="machine-learning">Machine Learning</button>
-        <button class="filter-btn" data-category="generative-ai">Generative AI</button>
-        <button class="filter-btn" data-category="research">Research</button>
-        <button class="filter-btn" data-category="industry">Industry</button>
-        <button class="filter-btn" data-category="robotics">Robotics</button>
-        <button class="filter-btn" data-category="ethics">Ethics</button>
-    </nav>
-
-    <!-- Main content -->
-    <main id="main">
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
+    <div class="app">
+        <!-- Progress Bar -->
+        <div class="progress">
+            <div class="progress-bar" id="progressBar" style="width: 0%"></div>
         </div>
-        <div class="articles-grid" id="articles"></div>
-        <button class="load-more" id="loadMore" style="display: none;">Load More</button>
-    </main>
 
-    <!-- Footer -->
-    <footer>
-        <p>
-            Powered by <a href="https://supabase.com" target="_blank">Supabase</a> & 
-            <a href="https://github.com/features/actions" target="_blank">GitHub Actions</a>
-        </p>
-        <p style="margin-top: 0.5rem;">
-            Data auto-refreshes every 6 hours • Old articles purged after 30 days
-        </p>
-    </footer>
+        <!-- Header with Category Tabs -->
+        <header class="header">
+            <div class="header-title">
+                <h1>🤖 AI <span>News</span> Shorts</h1>
+            </div>
+            <nav class="category-tabs" id="categoryTabs">
+                <button class="tab active" data-category="all">My Feed</button>
+                <button class="tab" data-category="generative-ai">Generative AI</button>
+                <button class="tab" data-category="machine-learning">ML</button>
+                <button class="tab" data-category="research">Research</button>
+                <button class="tab" data-category="industry">Industry</button>
+                <button class="tab" data-category="robotics">Robotics</button>
+                <button class="tab" data-category="ethics">Ethics</button>
+            </nav>
+        </header>
+
+        <!-- Article Count -->
+        <div class="article-count" id="articleCount">0 / 0</div>
+
+        <!-- Cards Container -->
+        <main class="cards-container" id="cardsContainer">
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Loading AI news...</p>
+            </div>
+        </main>
+
+        <!-- Swipe Hint -->
+        <div class="swipe-hint" id="swipeHint">
+            <span>👆</span> Swipe up for next story
+        </div>
+    </div>
 
     <!-- ============================================= -->
     <!-- JavaScript                                   -->
     <!-- ============================================= -->
     <script>
         // =================================================================
-        // CONFIGURATION - REPLACE THESE WITH YOUR ACTUAL VALUES
+        // CONFIGURATION - REPLACE WITH YOUR VALUES
         // =================================================================
         const SUPABASE_URL = 'https://cipcvzifbsupjketxzen.supabase.co';  // e.g., 'https://xxxxx.supabase.co'
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpcGN2emlmYnN1cGprZXR4emVuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE3OTI5NTMsImV4cCI6MjA4NzM2ODk1M30.KuWYW7_aXBr4yAegSGUK5ogfS0p2fJfqZPVwF-t0eHg'; // Your public anon key
         
-        // API endpoint for articles
-        const API_URL = `${SUPABASE_URL}/rest/v1/articles`;
         
         // =================================================================
         // STATE
         // =================================================================
+        let articles = [];
+        let currentIndex = 0;
         let currentCategory = 'all';
-        let currentPage = 0;
-        const PAGE_SIZE = 12;
-        let hasMore = true;
+        let bookmarks = JSON.parse(localStorage.getItem('bookmarks') || '[]');
+        
+        // Touch handling
+        let startY = 0;
+        let currentY = 0;
+        let isDragging = false;
         
         // =================================================================
         // DOM ELEMENTS
         // =================================================================
-        const articlesContainer = document.getElementById('articles');
+        const cardsContainer = document.getElementById('cardsContainer');
         const loadingEl = document.getElementById('loading');
-        const loadMoreBtn = document.getElementById('loadMore');
-        const filtersEl = document.getElementById('filters');
+        const progressBar = document.getElementById('progressBar');
+        const articleCount = document.getElementById('articleCount');
+        const categoryTabs = document.getElementById('categoryTabs');
+        const swipeHint = document.getElementById('swipeHint');
         
         // =================================================================
         // HELPER FUNCTIONS
         // =================================================================
         
-        // Format date for display
-        function formatDate(dateString) {
-            if (!dateString) return 'Unknown date';
+        function formatTime(dateString) {
+            if (!dateString) return '';
             const date = new Date(dateString);
             const now = new Date();
             const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / (1000 * 60));
             const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
             const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
             
-            if (diffHours < 1) return 'Just now';
+            if (diffMins < 60) return `${diffMins}m ago`;
             if (diffHours < 24) return `${diffHours}h ago`;
             if (diffDays < 7) return `${diffDays}d ago`;
-            
-            return date.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-            });
+            return date.toLocaleDateString();
         }
         
-        // Truncate text to a maximum length
-        function truncate(text, maxLength) {
-            if (!text || text.length <= maxLength) return text;
-            return text.slice(0, maxLength).trim() + '...';
-        }
-        
-        // Get category display name
-        function getCategoryName(category) {
+        function getCategoryName(cat) {
             const names = {
                 'machine-learning': 'Machine Learning',
                 'generative-ai': 'Generative AI',
-                'nlp': 'NLP',
-                'computer-vision': 'Computer Vision',
-                'robotics': 'Robotics',
-                'ethics': 'Ethics',
                 'research': 'Research',
                 'industry': 'Industry',
-                'hardware': 'Hardware',
-                'general': 'General'
+                'robotics': 'Robotics',
+                'ethics': 'Ethics',
+                'general': 'AI News'
             };
-            return names[category] || category;
+            return names[cat] || 'AI News';
         }
         
-        // Create article card HTML
-        function createArticleCard(article) {
-            const imageHtml = article.image_url 
-                ? `<img class="article-image" src="${article.image_url}" alt="" loading="lazy" onerror="this.outerHTML='<div class=\\'article-image placeholder\\'>📰</div>'">`
-                : '<div class="article-image placeholder">📰</div>';
-            
-            return `
-                <article class="article-card">
-                    ${imageHtml}
-                    <div class="article-content">
-                        <div class="article-meta">
-                            <span class="category-tag">${getCategoryName(article.category)}</span>
-                            <span class="article-date">${formatDate(article.published_at)}</span>
-                        </div>
-                        <h2 class="article-title">
-                            <a href="${article.url}" target="_blank" rel="noopener noreferrer">
-                                ${truncate(article.title, 100)}
-                            </a>
-                        </h2>
-                        <p class="article-description">
-                            ${truncate(article.description || '', 150)}
-                        </p>
-                        ${article.author ? `<p class="article-source">By ${article.author}</p>` : ''}
-                    </div>
-                </article>
-            `;
+        function isBookmarked(id) {
+            return bookmarks.includes(id);
+        }
+        
+        function toggleBookmark(id) {
+            if (isBookmarked(id)) {
+                bookmarks = bookmarks.filter(b => b !== id);
+            } else {
+                bookmarks.push(id);
+            }
+            localStorage.setItem('bookmarks', JSON.stringify(bookmarks));
+            renderCurrentCard();
+        }
+        
+        async function shareArticle(article) {
+            if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: article.title,
+                        text: article.summary_60,
+                        url: article.url
+                    });
+                } catch (err) {
+                    console.log('Share cancelled');
+                }
+            } else {
+                // Fallback: copy to clipboard
+                navigator.clipboard.writeText(article.url);
+                alert('Link copied to clipboard!');
+            }
         }
         
         // =================================================================
         // API FUNCTIONS
         // =================================================================
         
-        async function fetchArticles(category = 'all', page = 0) {
-            // Build query URL
-            let url = `${API_URL}?select=*&is_deleted=eq.false&order=published_at.desc.nullsfirst`;
+        async function fetchArticles(category = 'all') {
+            let url = `${SUPABASE_URL}/rest/v1/articles?select=*&is_summarized=eq.true&is_deleted=eq.false&order=published_at.desc.nullsfirst&limit=100`;
             
-            // Add category filter if not "all"
             if (category !== 'all') {
                 url += `&category=eq.${category}`;
             }
             
-            // Add pagination
-            const offset = page * PAGE_SIZE;
-            url += `&limit=${PAGE_SIZE}&offset=${offset}`;
-            
-            // Make request
             const response = await fetch(url, {
                 headers: {
                     'apikey': SUPABASE_ANON_KEY,
@@ -499,116 +598,263 @@
                 }
             });
             
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            
+            if (!response.ok) throw new Error('Failed to fetch');
             return response.json();
         }
         
         // =================================================================
-        // UI FUNCTIONS
+        // RENDERING
         // =================================================================
         
-        function showLoading() {
-            loadingEl.style.display = 'flex';
-            loadMoreBtn.style.display = 'none';
-        }
-        
-        function hideLoading() {
-            loadingEl.style.display = 'none';
-        }
-        
-        function showError(message) {
-            articlesContainer.innerHTML = `
-                <div class="error" style="grid-column: 1 / -1;">
-                    <p>😕 ${message}</p>
-                    <p style="margin-top: 0.5rem; font-size: 0.875rem;">
-                        Make sure to configure your Supabase URL and anon key in the script.
-                    </p>
-                </div>
+        function createCardHTML(article, index) {
+            const imageHtml = article.image_url 
+                ? `<img class="card-image" src="${article.image_url}" alt="" loading="lazy" onerror="this.className='card-image placeholder'; this.outerHTML='<div class=\\'card-image placeholder\\'>📰</div>'">`
+                : '<div class="card-image placeholder">📰</div>';
+            
+            const bookmarkedClass = isBookmarked(article.id) ? 'bookmarked' : '';
+            
+            return `
+                <article class="news-card ${index === currentIndex ? '' : 'hidden'}" data-index="${index}">
+                    ${imageHtml}
+                    <div class="card-content">
+                        <div class="card-source">
+                            <span>📱</span> ${getCategoryName(article.category)}
+                        </div>
+                        <h2 class="card-title">${article.title}</h2>
+                        <p class="card-summary">${article.summary_60 || article.description || ''}</p>
+                        <div class="card-footer">
+                            <span class="card-time">${formatTime(article.published_at)}</span>
+                            <div class="card-actions">
+                                <button class="action-btn ${bookmarkedClass}" onclick="toggleBookmark('${article.id}')" title="Bookmark">
+                                    ${isBookmarked(article.id) ? '★' : '☆'}
+                                </button>
+                                <button class="action-btn" onclick="shareArticle(articles[${index}])" title="Share">
+                                    ↗
+                                </button>
+                                <a href="${article.url}" target="_blank" class="action-btn" title="Read full article">
+                                    →
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </article>
             `;
         }
         
-        async function loadArticles(append = false) {
-            if (!append) {
-                showLoading();
-                articlesContainer.innerHTML = '';
-                currentPage = 0;
+        function renderCurrentCard() {
+            if (articles.length === 0) {
+                cardsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <h2>📭 No articles yet</h2>
+                        <p>Check back soon for AI news!</p>
+                    </div>
+                `;
+                return;
             }
             
-            loadMoreBtn.disabled = true;
-            loadMoreBtn.textContent = 'Loading...';
+            // Render current and next card for smooth transition
+            const indices = [currentIndex, currentIndex + 1].filter(i => i < articles.length);
+            cardsContainer.innerHTML = indices.map(i => createCardHTML(articles[i], i)).join('');
             
-            try {
-                const articles = await fetchArticles(currentCategory, currentPage);
+            // Update progress
+            const progress = ((currentIndex + 1) / articles.length) * 100;
+            progressBar.style.width = `${progress}%`;
+            articleCount.textContent = `${currentIndex + 1} / ${articles.length}`;
+            
+            // Setup touch handlers on current card
+            setupTouchHandlers();
+        }
+        
+        // =================================================================
+        // TOUCH/SWIPE HANDLING
+        // =================================================================
+        
+        function setupTouchHandlers() {
+            const currentCard = cardsContainer.querySelector(`.news-card[data-index="${currentIndex}"]`);
+            if (!currentCard) return;
+            
+            currentCard.addEventListener('touchstart', handleTouchStart, { passive: true });
+            currentCard.addEventListener('touchmove', handleTouchMove, { passive: false });
+            currentCard.addEventListener('touchend', handleTouchEnd);
+            
+            // Mouse support for desktop
+            currentCard.addEventListener('mousedown', handleMouseDown);
+            document.addEventListener('mousemove', handleMouseMove);
+            document.addEventListener('mouseup', handleMouseUp);
+        }
+        
+        function handleTouchStart(e) {
+            startY = e.touches[0].clientY;
+            isDragging = true;
+            e.currentTarget.classList.add('swiping');
+        }
+        
+        function handleTouchMove(e) {
+            if (!isDragging) return;
+            currentY = e.touches[0].clientY;
+            const deltaY = currentY - startY;
+            
+            const card = e.currentTarget;
+            card.style.transform = `translateY(${deltaY * 0.5}px)`;
+            
+            // Prevent page scroll
+            if (Math.abs(deltaY) > 10) {
+                e.preventDefault();
+            }
+        }
+        
+        function handleTouchEnd(e) {
+            if (!isDragging) return;
+            isDragging = false;
+            
+            const card = e.currentTarget;
+            card.classList.remove('swiping');
+            
+            const deltaY = currentY - startY;
+            
+            // Swipe threshold
+            if (deltaY < -80 && currentIndex < articles.length - 1) {
+                // Swipe up - next article
+                card.classList.add('exit-up');
+                setTimeout(() => {
+                    currentIndex++;
+                    renderCurrentCard();
+                    hideSwipeHint();
+                }, 300);
+            } else if (deltaY > 80 && currentIndex > 0) {
+                // Swipe down - previous article
+                card.classList.add('exit-down');
+                setTimeout(() => {
+                    currentIndex--;
+                    renderCurrentCard();
+                }, 300);
+            } else {
+                // Reset position
+                card.style.transform = '';
+            }
+        }
+        
+        // Mouse handlers for desktop
+        function handleMouseDown(e) {
+            startY = e.clientY;
+            isDragging = true;
+            e.currentTarget.classList.add('swiping');
+        }
+        
+        function handleMouseMove(e) {
+            if (!isDragging) return;
+            const card = cardsContainer.querySelector('.news-card.swiping');
+            if (!card) return;
+            
+            currentY = e.clientY;
+            const deltaY = currentY - startY;
+            card.style.transform = `translateY(${deltaY * 0.5}px)`;
+        }
+        
+        function handleMouseUp() {
+            if (!isDragging) return;
+            const card = cardsContainer.querySelector('.news-card.swiping');
+            if (card) {
+                card.classList.remove('swiping');
+                const deltaY = currentY - startY;
                 
-                hideLoading();
-                
-                if (articles.length === 0 && currentPage === 0) {
-                    articlesContainer.innerHTML = `
-                        <div class="error" style="grid-column: 1 / -1;">
-                            <p>No articles found${currentCategory !== 'all' ? ` in ${getCategoryName(currentCategory)}` : ''}.</p>
-                        </div>
-                    `;
-                    loadMoreBtn.style.display = 'none';
-                    return;
-                }
-                
-                // Render articles
-                const html = articles.map(createArticleCard).join('');
-                if (append) {
-                    articlesContainer.innerHTML += html;
+                if (deltaY < -80 && currentIndex < articles.length - 1) {
+                    card.classList.add('exit-up');
+                    setTimeout(() => {
+                        currentIndex++;
+                        renderCurrentCard();
+                        hideSwipeHint();
+                    }, 300);
+                } else if (deltaY > 80 && currentIndex > 0) {
+                    card.classList.add('exit-down');
+                    setTimeout(() => {
+                        currentIndex--;
+                        renderCurrentCard();
+                    }, 300);
                 } else {
-                    articlesContainer.innerHTML = html;
+                    card.style.transform = '';
                 }
-                
-                // Update load more button
-                hasMore = articles.length === PAGE_SIZE;
-                loadMoreBtn.style.display = hasMore ? 'block' : 'none';
-                loadMoreBtn.disabled = false;
-                loadMoreBtn.textContent = 'Load More';
-                
-            } catch (error) {
-                console.error('Error fetching articles:', error);
-                hideLoading();
-                showError('Failed to load articles. Please try again later.');
+            }
+            isDragging = false;
+        }
+        
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowUp' && currentIndex < articles.length - 1) {
+                currentIndex++;
+                renderCurrentCard();
+                hideSwipeHint();
+            } else if (e.key === 'ArrowDown' && currentIndex > 0) {
+                currentIndex--;
+                renderCurrentCard();
+            }
+        });
+        
+        // =================================================================
+        // CATEGORY TABS
+        // =================================================================
+        
+        categoryTabs.addEventListener('click', async (e) => {
+            if (!e.target.classList.contains('tab')) return;
+            
+            // Update active tab
+            categoryTabs.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            e.target.classList.add('active');
+            
+            // Load new category
+            currentCategory = e.target.dataset.category;
+            currentIndex = 0;
+            await loadArticles(currentCategory);
+        });
+        
+        // =================================================================
+        // SWIPE HINT
+        // =================================================================
+        
+        function hideSwipeHint() {
+            swipeHint.classList.add('hidden');
+            localStorage.setItem('swipeHintShown', 'true');
+        }
+        
+        function showSwipeHintIfNeeded() {
+            if (!localStorage.getItem('swipeHintShown')) {
+                swipeHint.classList.remove('hidden');
+            } else {
+                swipeHint.classList.add('hidden');
             }
         }
         
         // =================================================================
-        // EVENT HANDLERS
+        // INITIALIZATION
         // =================================================================
         
-        // Filter button clicks
-        filtersEl.addEventListener('click', (e) => {
-            if (!e.target.classList.contains('filter-btn')) return;
+        async function loadArticles(category = 'all') {
+            loadingEl.style.display = 'block';
             
-            // Update active state
-            filtersEl.querySelectorAll('.filter-btn').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            e.target.classList.add('active');
-            
-            // Update category and reload
-            currentCategory = e.target.dataset.category;
-            loadArticles();
-        });
+            try {
+                articles = await fetchArticles(category);
+                loadingEl.style.display = 'none';
+                renderCurrentCard();
+                showSwipeHintIfNeeded();
+            } catch (error) {
+                console.error('Error:', error);
+                loadingEl.innerHTML = `
+                    <p>😕 Failed to load articles</p>
+                    <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 8px;">
+                        Make sure to configure Supabase credentials
+                    </p>
+                `;
+            }
+        }
         
-        // Load more button
-        loadMoreBtn.addEventListener('click', () => {
-            currentPage++;
-            loadArticles(true);
-        });
-        
-        // =================================================================
-        // INITIALIZE
-        // =================================================================
-        
-        // Check if configuration is set
-        if (SUPABASE_URL === 'YOUR_SUPABASE_URL' || SUPABASE_ANON_KEY === 'YOUR_ANON_KEY') {
-            hideLoading();
-            showError('Please configure your Supabase URL and anon key in the script.');
+        // Check configuration
+        if (SUPABASE_URL === 'YOUR_SUPABASE_URL') {
+            loadingEl.innerHTML = `
+                <p>⚙️ Configuration needed</p>
+                <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 8px;">
+                    Update SUPABASE_URL and SUPABASE_ANON_KEY in the script
+                </p>
+            `;
         } else {
             loadArticles();
         }

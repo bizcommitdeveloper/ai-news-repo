@@ -1,18 +1,18 @@
-# Python Dependencies for AI News Aggregator
-# ==========================================
-# Install with: pip install -r requirements.txt
+# Python Dependencies for AI News Aggregator v2
+# ===============================================
+# With content filtering and summarization
 
 # Supabase Python client
-# Used for all database operations
 supabase>=2.0.0
 
 # RSS feed parsing
-# Handles various RSS/Atom feed formats automatically
 feedparser>=6.0.0
 
-# HTTP requests library
-# Used for NewsAPI calls and custom fetching
+# HTTP requests
 requests>=2.28.0
 
-# Date/time handling (already in stdlib, but useful for complex operations)
+# Date handling
 python-dateutil>=2.8.0
+
+# Google Gemini AI (FREE: 1500 requests/day)
+google-generativeai>=0.3.0

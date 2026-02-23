@@ -82,6 +82,10 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNpcGN2eml
 
 Keep this page open; you'll need these values in the next step.
 
+Gemini APi
+
+AIzaSyDh0TbT65Vx4qxq9p-8_9F8_lUPsivWJhg
+
 ---
 
 ## Step 3: Configure GitHub Secrets
