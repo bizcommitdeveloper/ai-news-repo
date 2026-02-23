@@ -127,7 +127,9 @@ def setup_gemini() -> genai.GenerativeModel:
     genai.configure(api_key=GEMINI_API_KEY)
     
     model = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
+        # Use a stable, generally available text model.
+        # 1.5 Flash is returning 404 for v1beta; 1.0 Pro remains supported.
+        model_name="gemini-1.0-pro",
         generation_config={
             "temperature": 0.1,  # Low temperature for consistent filtering
             "top_p": 0.95,
