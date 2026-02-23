@@ -184,7 +184,11 @@ def filter_article(model: genai.GenerativeModel, title: str, content: str) -> Di
     if len(content) > 2000:
         content = content[:2000] + "..."
     
-    prompt = FILTER_PROMPT.format(title=title, content=content)
+    # NOTE:
+    # FILTER_PROMPT contains literal JSON braces ({, }) in the example payload.
+    # Using str.format(...) would treat those as placeholders and raise KeyError.
+    # We only want to substitute {title} and {content}, so we do simple replacements.
+    prompt = FILTER_PROMPT.replace("{title}", title).replace("{content}", content)
     
     try:
         response = model.generate_content(prompt)
