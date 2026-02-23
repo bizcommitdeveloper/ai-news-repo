@@ -122,10 +122,13 @@ def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def setup_gemini() -> Any:
-    """Configures and returns Gemini model."""
-    client = genai.Client(api_key=GEMINI_API_KEY)
-    return client.models.generate_content
+def setup_gemini() -> None:
+    """
+    Placeholder for compatibility. The new google.genai client is
+    instantiated per request inside filter_article to avoid using a
+    closed client between calls.
+    """
+    return None
 
 
 def parse_filter_response(response_text: str) -> Optional[Dict]:
@@ -146,7 +149,7 @@ def parse_filter_response(response_text: str) -> Optional[Dict]:
         return None
 
 
-def filter_article(generate_fn, title: str, content: str) -> Dict:
+def filter_article(title: str, content: str) -> Dict:
     """
     Filters an article using Gemini AI.
     
@@ -180,8 +183,10 @@ def filter_article(generate_fn, title: str, content: str) -> Dict:
     # We only want to substitute {title} and {content}, so we do simple replacements.
     prompt = FILTER_PROMPT.replace("{title}", title).replace("{content}", content)
     
+    client = None
     try:
-        response = generate_fn(
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
             model="gemini-1.5-flash",
             contents=prompt,
             config={
@@ -190,7 +195,10 @@ def filter_article(generate_fn, title: str, content: str) -> Dict:
                 "max_output_tokens": 300,
             },
         )
-        text = response.text if hasattr(response, "text") else str(response.candidates[0].content.parts[0].text)
+        # google-genai responses expose .text; fall back to first candidate part.
+        text = getattr(response, "text", None)
+        if not text and getattr(response, "candidates", None):
+            text = str(response.candidates[0].content.parts[0].text)
         if text:
             result = parse_filter_response(text)
             
@@ -210,6 +218,12 @@ def filter_article(generate_fn, title: str, content: str) -> Dict:
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
         default_result['filter_reason'] = f'API error: {str(e)[:50]}'
+    finally:
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
     
     return default_result
 
@@ -326,7 +340,7 @@ def process_articles():
     # Initialize clients
     logger.info("Initializing Supabase and Gemini...")
     supabase = get_supabase_client()
-    generate_fn = setup_gemini()
+    setup_gemini()  # no-op; kept for backwards compatibility
     
     # Get initial statistics
     stats_before = get_filter_statistics(supabase)
@@ -362,7 +376,7 @@ def process_articles():
         logger.info(f"\n[{i}/{len(articles)}] Filtering: {short_title}")
         
         # Filter the article
-        filter_result = filter_article(generate_fn, title, content)
+        filter_result = filter_article(title, content)
         
         # Update database
         if update_article_filter(supabase, article_id, filter_result):
