@@ -20,7 +20,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
 
-import google.generativeai as genai
+from google import genai
 from supabase import create_client, Client
 
 # =============================================================================
@@ -93,25 +93,15 @@ def get_supabase_client() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
-def setup_gemini() -> genai.GenerativeModel:
-    genai.configure(api_key=GEMINI_API_KEY)
-    return genai.GenerativeModel(
-        # Use a stable, generally available text model.
-        # 1.5 Flash is returning 404 for v1beta; 1.0 Pro remains supported.
-        model_name="gemini-1.0-pro",
-        generation_config={
-            "temperature": 0.7,
-            "top_p": 0.95,
-            "max_output_tokens": 200,
-        }
-    )
+def setup_gemini():
+    return genai.Client(api_key=GEMINI_API_KEY)
 
 
 def count_words(text: str) -> int:
     return len(text.split())
 
 
-def generate_summary(model: genai.GenerativeModel, title: str, content: str) -> Optional[str]:
+def generate_summary(client, title: str, content: str) -> Optional[str]:
     if not content or len(content.strip()) < 50:
         return None
     
@@ -122,10 +112,18 @@ def generate_summary(model: genai.GenerativeModel, title: str, content: str) -> 
     
     for attempt in range(MAX_RETRIES):
         try:
-            response = model.generate_content(prompt)
-            
-            if response.text:
-                summary = response.text.strip()
+            response = client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=prompt,
+                config={
+                    "temperature": 0.7,
+                    "top_p": 0.95,
+                    "max_output_tokens": 200,
+                },
+            )
+            text = response.text if hasattr(response, "text") else str(response.candidates[0].content.parts[0].text)
+            if text:
+                summary = text.strip()
                 if summary.startswith('"') and summary.endswith('"'):
                     summary = summary[1:-1]
                 
@@ -206,7 +204,7 @@ def process_articles():
     
     logger.info("Initializing Supabase and Gemini...")
     supabase = get_supabase_client()
-    gemini_model = setup_gemini()
+    gemini_client = setup_gemini()
     
     # Only fetch APPROVED articles
     logger.info(f"Fetching up to {BATCH_SIZE} approved, unsummarized articles...")
@@ -239,7 +237,7 @@ def process_articles():
             stats['skipped'] += 1
             continue
         
-        summary = generate_summary(gemini_model, title, content)
+        summary = generate_summary(gemini_client, title, content)
         
         if summary:
             if update_article_summary(supabase, article_id, summary):

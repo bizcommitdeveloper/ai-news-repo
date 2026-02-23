@@ -21,7 +21,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any, Tuple
 
-import google.generativeai as genai
+from google import genai
 from supabase import create_client, Client
 
 # =============================================================================
@@ -124,20 +124,8 @@ def get_supabase_client() -> Client:
 
 def setup_gemini() -> genai.GenerativeModel:
     """Configures and returns Gemini model."""
-    genai.configure(api_key=GEMINI_API_KEY)
-    
-    model = genai.GenerativeModel(
-        # Use a stable, generally available text model.
-        # 1.5 Flash is returning 404 for v1beta; 1.0 Pro remains supported.
-        model_name="gemini-1.0-pro",
-        generation_config={
-            "temperature": 0.1,  # Low temperature for consistent filtering
-            "top_p": 0.95,
-            "max_output_tokens": 300,
-        }
-    )
-    
-    return model
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    return client.models.generate_content
 
 
 def parse_filter_response(response_text: str) -> Optional[Dict]:
@@ -158,7 +146,7 @@ def parse_filter_response(response_text: str) -> Optional[Dict]:
         return None
 
 
-def filter_article(model: genai.GenerativeModel, title: str, content: str) -> Dict:
+def filter_article(generate_fn, title: str, content: str) -> Dict:
     """
     Filters an article using Gemini AI.
     
@@ -193,10 +181,18 @@ def filter_article(model: genai.GenerativeModel, title: str, content: str) -> Di
     prompt = FILTER_PROMPT.replace("{title}", title).replace("{content}", content)
     
     try:
-        response = model.generate_content(prompt)
-        
-        if response.text:
-            result = parse_filter_response(response.text)
+        response = generate_fn(
+            model="gemini-1.5-flash",
+            contents=prompt,
+            config={
+                "temperature": 0.1,
+                "top_p": 0.95,
+                "max_output_tokens": 300,
+            },
+        )
+        text = response.text if hasattr(response, "text") else str(response.candidates[0].content.parts[0].text)
+        if text:
+            result = parse_filter_response(text)
             
             if result:
                 is_english = result.get('is_english', False)
@@ -330,7 +326,7 @@ def process_articles():
     # Initialize clients
     logger.info("Initializing Supabase and Gemini...")
     supabase = get_supabase_client()
-    gemini_model = setup_gemini()
+    generate_fn = setup_gemini()
     
     # Get initial statistics
     stats_before = get_filter_statistics(supabase)
@@ -366,7 +362,7 @@ def process_articles():
         logger.info(f"\n[{i}/{len(articles)}] Filtering: {short_title}")
         
         # Filter the article
-        filter_result = filter_article(gemini_model, title, content)
+        filter_result = filter_article(generate_fn, title, content)
         
         # Update database
         if update_article_filter(supabase, article_id, filter_result):

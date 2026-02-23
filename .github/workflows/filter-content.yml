@@ -1,0 +1,60 @@
+# ============================================================================
+# Filter AI Content Workflow (Gemini)
+# ============================================================================
+# This workflow filters fetched articles using Gemini and updates their
+# is_filtered / is_approved flags. Kept separate from fetch to avoid long
+# combined runs.
+# ============================================================================
+
+name: Filter AI Content
+
+on:
+  # Run every 6 hours (offset by 1 hour from fetch to avoid overlap)
+  schedule:
+    - cron: '0 1/6 * * *'
+
+  # Allow manual triggering from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Enable verbose logging'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: filter-content
+  cancel-in-progress: false
+
+jobs:
+  filter:
+    name: Filter Articles (Gemini)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'scripts/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      - name: Run content filter
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LOG_LEVEL: ${{ inputs.verbose == 'true' && 'DEBUG' || 'INFO' }}
+          VERBOSE_LOGGING: ${{ inputs.verbose }}
+        working-directory: scripts
+        run: python filter_content.py
+
